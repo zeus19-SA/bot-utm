@@ -273,7 +273,7 @@ async def mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 🚀 MAIN
 # =========================
 def main():
-    print("🚀 BOT NIVEL DIOS INICIADO v2")
+    print("🚀 BOT NIVEL DIOS INICIADO v3")
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
