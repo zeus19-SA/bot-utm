@@ -20,6 +20,8 @@ TELEGRAM_TOKEN = "8571397317:AAHu7xMNjsrm0clf-xZ1Mroa6nX-VxTRbYk"
 VENICE_API_KEY = "VENICE_INFERENCE_KEY_MELO54gD7Efx0cM5dwLoM2-QJ-FbkSJAdbNNTAf2zv"
 DATABASE_URL = "postgresql://postgres:OwNZeaCPLcYkbZnCbWppsmEjMUzbBbMR@monorail.proxy.rlwy.net:46807/railway"
 
+
+
 # =========================
 # 🪵 LOGS
 # =========================
@@ -45,16 +47,6 @@ CREATE TABLE IF NOT EXISTS warnings (
 )
 """)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS historial (
-    id SERIAL PRIMARY KEY,
-    telegram_id BIGINT,
-    mensaje TEXT,
-    rol TEXT,
-    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-
 conn.commit()
 
 # =========================
@@ -67,36 +59,9 @@ keyboard = [
 markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # =========================
-# 🧠 HISTORIAL
+# 🤖 IA VENICE
 # =========================
-def guardar_historial(user_id, mensaje, rol):
-    cursor.execute(
-        "INSERT INTO historial (telegram_id, mensaje, rol) VALUES (%s, %s, %s)",
-        (user_id, mensaje, rol)
-    )
-    conn.commit()
-
-def obtener_historial(user_id):
-    cursor.execute("""
-        SELECT rol, mensaje FROM historial
-        WHERE telegram_id=%s
-        ORDER BY id DESC LIMIT 6
-    """, (user_id,))
-    rows = cursor.fetchall()
-    return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
-
-# =========================
-# 🤖 VENICE IA
-# =========================
-async def preguntar_venice(user_id, prompt):
-    historial = obtener_historial(user_id)
-
-    messages = [
-        {"role": "system", "content": "Eres un asistente universitario experto de la UTM."}
-    ] + historial + [
-        {"role": "user", "content": prompt}
-    ]
-
+async def preguntar_venice(prompt):
     headers = {
         "Authorization": f"Bearer {VENICE_API_KEY}",
         "Content-Type": "application/json",
@@ -104,28 +69,30 @@ async def preguntar_venice(user_id, prompt):
 
     data = {
         "model": "venice-uncensored",
-        "messages": messages
+        "messages": [
+            {"role": "system", "content": "Eres un asistente universitario de la UTM."},
+            {"role": "user", "content": prompt}
+        ]
     }
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(
                 "https://api.venice.ai/api/v1/chat/completions",
                 json=data,
                 headers=headers
             )
+
+            print("STATUS:", response.status_code)
+            print("RESP:", response.text)
+
             result = response.json()
 
-        reply = result["choices"][0]["message"]["content"]
-
-        guardar_historial(user_id, prompt, "user")
-        guardar_historial(user_id, reply, "assistant")
-
-        return reply
+        return result["choices"][0]["message"]["content"]
 
     except Exception as e:
         print("ERROR IA:", e)
-        return "🤖 IA temporalmente no disponible."
+        return "🤖 Error con la IA"
 
 # =========================
 # 🛡️ SEGURIDAD
@@ -134,7 +101,7 @@ def contiene_link(texto):
     return any(x in texto.lower() for x in ["http://", "https://", "t.me"])
 
 def es_spam(texto):
-    spam = ["crypto", "xxx", "onlyfans", "dinero fácil"]
+    spam = ["crypto", "xxx", "onlyfans"]
     return any(p in texto.lower() for p in spam)
 
 async def es_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -166,7 +133,7 @@ def agregar_warning(user_id):
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 Bienvenido al Bot UTM\nSelecciona una opción 👇",
+        "🤖 Bienvenido al bot UTM\nSelecciona una opción 👇",
         reply_markup=markup
     )
 
@@ -174,8 +141,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 👥 BIENVENIDA
 # =========================
 async def bienvenida(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    for user in update.message.new_chat_members:
-        await update.message.reply_text(f"""
+    if update.message.new_chat_members:
+        for user in update.message.new_chat_members:
+            await update.message.reply_text(f"""
 👋 Bienvenido {user.first_name}
 
 📜 Reglas:
@@ -184,68 +152,28 @@ async def bienvenida(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """)
 
 # =========================
-# 📊 STATS
-# =========================
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cursor.execute("SELECT COUNT(*) FROM usuarios")
-    users = cursor.fetchone()[0]
-
-    cursor.execute("SELECT COUNT(*) FROM historial")
-    mensajes = cursor.fetchone()[0]
-
-    await update.message.reply_text(f"👥 Usuarios: {users}\n💬 Mensajes: {mensajes}")
-
-# =========================
-# 📢 BROADCAST
-# =========================
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await es_admin(update, context):
-        return
-
-    mensaje = " ".join(context.args)
-
-    cursor.execute("SELECT telegram_id FROM usuarios")
-    users = cursor.fetchall()
-
-    for u in users:
-        try:
-            await context.bot.send_message(u[0], mensaje)
-        except:
-            pass
-
-    await update.message.reply_text("📢 Enviado")
-
-# =========================
-# 🚫 BAN
-# =========================
-async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await es_admin(update, context):
-        return
-
-    if update.message.reply_to_message:
-        user_id = update.message.reply_to_message.from_user.id
-        await context.bot.ban_chat_member(update.effective_chat.id, user_id)
-        await update.message.reply_text("🚫 Usuario baneado")
-
-# =========================
 # 💬 MENSAJES
 # =========================
 async def mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = update.message.text
+    if not update.message:
+        return
+
+    texto = update.message.text or ""
     user = update.effective_user
 
+    # Guardar usuario
     cursor.execute(
         "INSERT INTO usuarios VALUES (%s, %s) ON CONFLICT DO NOTHING",
         (user.id, user.first_name)
     )
     conn.commit()
 
-    # SPAM
+    # 🚫 SPAM
     if es_spam(texto):
         await update.message.delete()
         return
 
-    # LINKS
+    # 🚫 LINKS
     if contiene_link(texto):
         if not await es_admin(update, context):
             count = agregar_warning(user.id)
@@ -256,8 +184,9 @@ async def mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.ban_chat_member(update.effective_chat.id, user.id)
             return
 
-    # RESPUESTAS RÁPIDAS
+    # ⚡ RESPUESTAS RÁPIDAS
     t = texto.lower()
+
     if "admision" in t:
         respuesta = "📚 Debes rendir examen de admisión."
     elif "matricula" in t:
@@ -265,7 +194,7 @@ async def mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif "clases" in t:
         respuesta = "📅 Modalidad presencial o virtual."
     else:
-        respuesta = await preguntar_venice(user.id, texto)
+        respuesta = await preguntar_venice(texto)
 
     await update.message.reply_text(respuesta)
 
@@ -273,19 +202,18 @@ async def mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 🚀 MAIN
 # =========================
 def main():
-    print("🚀 BOT NIVEL DIOS INICIADO v3")
+    print("🚀 BOT CORREGIDO GRUPOS")
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CommandHandler("broadcast", broadcast))
-    app.add_handler(CommandHandler("ban", ban))
-
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, bienvenida))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensaje))
+
+    # 🔥 CAMBIO CLAVE PARA GRUPOS
+    app.add_handler(MessageHandler(filters.ALL, mensaje))
 
     app.run_polling()
 
 if __name__ == "__main__":
     main()
+    
