@@ -20,8 +20,6 @@ TELEGRAM_TOKEN = "8571397317:AAGEEvBiHLMaJbIUOyc7WzCFn_KimajBID8"
 VENICE_API_KEY = "VENICE_INFERENCE_KEY_MELO54gD7Efx0cM5dwLoM2-QJ-FbkSJAdbNNTAf2zv"
 DATABASE_URL = "postgresql://postgres:OwNZeaCPLcYkbZnCbWppsmEjMUzbBbMR@monorail.proxy.rlwy.net:46807/railway"
 
-
-
 # =========================
 # 🪵 LOGS
 # =========================
@@ -37,13 +35,6 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS usuarios (
     telegram_id BIGINT PRIMARY KEY,
     nombre TEXT
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS warnings (
-    telegram_id BIGINT PRIMARY KEY,
-    count INT DEFAULT 0
 )
 """)
 
@@ -95,40 +86,6 @@ async def preguntar_venice(prompt):
         return "🤖 Error con la IA"
 
 # =========================
-# 🛡️ SEGURIDAD
-# =========================
-def contiene_link(texto):
-    return any(x in texto.lower() for x in ["http://", "https://", "t.me"])
-
-def es_spam(texto):
-    spam = ["crypto", "xxx", "onlyfans"]
-    return any(p in texto.lower() for p in spam)
-
-async def es_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    member = await context.bot.get_chat_member(
-        update.effective_chat.id,
-        update.effective_user.id
-    )
-    return member.status in ["administrator", "creator"]
-
-# =========================
-# 🚨 WARNINGS
-# =========================
-def agregar_warning(user_id):
-    cursor.execute("SELECT count FROM warnings WHERE telegram_id=%s", (user_id,))
-    row = cursor.fetchone()
-
-    if row:
-        count = row[0] + 1
-        cursor.execute("UPDATE warnings SET count=%s WHERE telegram_id=%s", (count, user_id))
-    else:
-        count = 1
-        cursor.execute("INSERT INTO warnings VALUES (%s, %s)", (user_id, count))
-
-    conn.commit()
-    return count
-
-# =========================
 # 👋 START
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -138,21 +95,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# 👥 BIENVENIDA
+# 👥 BIENVENIDA GRUPO
 # =========================
 async def bienvenida(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.new_chat_members:
+    if update.message and update.message.new_chat_members:
         for user in update.message.new_chat_members:
             await update.message.reply_text(f"""
 👋 Bienvenido {user.first_name}
 
 📜 Reglas:
 ❌ No spam
-❌ No links
+❌ No enlaces
 """)
 
 # =========================
-# 💬 MENSAJES
+# 💬 MENSAJES (FIX GRUPOS)
 # =========================
 async def mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -168,23 +125,7 @@ async def mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     conn.commit()
 
-    # 🚫 SPAM
-    if es_spam(texto):
-        await update.message.delete()
-        return
-
-    # 🚫 LINKS
-    if contiene_link(texto):
-        if not await es_admin(update, context):
-            count = agregar_warning(user.id)
-            await update.message.delete()
-            await update.message.reply_text(f"⚠️ Advertencia {count}/3")
-
-            if count >= 3:
-                await context.bot.ban_chat_member(update.effective_chat.id, user.id)
-            return
-
-    # ⚡ RESPUESTAS RÁPIDAS
+    # 👉 RESPUESTAS RÁPIDAS
     t = texto.lower()
 
     if "admision" in t:
@@ -202,18 +143,22 @@ async def mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 🚀 MAIN
 # =========================
 def main():
-    print("🚀 BOT CORREGIDO GRUPOS")
+    print("🚀 BOT FINAL FUNCIONANDO")
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, bienvenida))
 
-    # 🔥 CAMBIO CLAVE PARA GRUPOS
-    app.add_handler(MessageHandler(filters.ALL, mensaje))
+    # 🔥 ESTE ES EL FIX CLAVE
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            mensaje
+        )
+    )
 
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-    
