@@ -16,7 +16,7 @@ from telegram.ext import (
 # 🔑 VARIABLES
 # =========================
 
-TELEGRAM_TOKEN = "8571397317:AAHu7xMNjsrm0clf-xZ1Mroa6nX-VxTRbYk"
+TELEGRAM_TOKEN = "8571397317:AAGEEvBiHLMaJbIUOyc7WzCFn_KimajBID8"
 VENICE_API_KEY = "VENICE_INFERENCE_KEY_MELO54gD7Efx0cM5dwLoM2-QJ-FbkSJAdbNNTAf2zv"
 DATABASE_URL = "postgresql://postgres:OwNZeaCPLcYkbZnCbWppsmEjMUzbBbMR@monorail.proxy.rlwy.net:46807/railway"
 
